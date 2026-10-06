@@ -7,7 +7,7 @@ MCP tools and external scripts, ensuring consistent behavior and type safety.
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from .service import KankaService, get_service
 from .types import (
@@ -482,7 +482,7 @@ class KankaOperations:
                 entity = self.service.get_entity_by_id(entity_id, include_posts)
 
                 if entity:
-                    result: GetEntityResult = {
+                    data: dict[str, Any] = {
                         "id": entity["id"],
                         "entity_id": entity["entity_id"],
                         "name": entity["name"],
@@ -499,19 +499,25 @@ class KankaOperations:
 
                     # Add quest-specific fields
                     if entity.get("entity_type") == "quest":
-                        result["is_completed"] = entity.get("is_completed")
+                        data["is_completed"] = entity.get("is_completed")
 
                     # Add all image fields (they should always be present from service layer)
-                    result["image"] = entity.get("image")
-                    result["image_full"] = entity.get("image_full")
-                    result["image_thumb"] = entity.get("image_thumb")
-                    result["image_uuid"] = entity.get("image_uuid")
-                    result["header_uuid"] = entity.get("header_uuid")
+                    data["image"] = entity.get("image")
+                    data["image_full"] = entity.get("image_full")
+                    data["image_thumb"] = entity.get("image_thumb")
+                    data["image_uuid"] = entity.get("image_uuid")
+                    data["header_uuid"] = entity.get("header_uuid")
+
+                    # Carry over every other field the service returned
+                    # (sheet fields, parent_id, status, ...)
+                    for key, value in entity.items():
+                        if key not in data:
+                            data[key] = value
 
                     if include_posts:
-                        result["posts"] = entity.get("posts", [])
+                        data["posts"] = entity.get("posts", [])
 
-                    results.append(result)
+                    results.append(cast(GetEntityResult, data))
                 else:
                     not_found_result: GetEntityResult = {
                         "entity_id": entity_id,

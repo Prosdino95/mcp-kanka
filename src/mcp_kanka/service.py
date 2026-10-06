@@ -320,13 +320,19 @@ class KankaService:
             if not type_id:
                 return None
 
-            # Now use the type-specific manager to get a proper entity object
-            # This gives us consistent data format with datetime objects
+            # Build the entity object from the child payload this endpoint
+            # already returned, instead of fetching it a second time
             manager = getattr(self.client, self.API_ENDPOINT_MAP[our_type])
-            entity = manager.get(type_id)
+            entity = manager.model(**child_data)
 
             # Use _entity_to_dict to handle all conversions consistently
-            result = self._entity_to_dict(entity, our_type)
+            result = self._entity_to_dict(entity, our_type, include_all=True)
+
+            # Fields that only live on the entity wrapper, not on the child
+            for key in ("parent_id", "type_id", "archived_at"):
+                value = found_entity.get(key)
+                if value is not None:
+                    result[key] = value
 
             # Get posts if requested
             if include_posts:
@@ -784,13 +790,28 @@ class KankaService:
 
         return tag_names
 
-    def _entity_to_dict(self, entity: Entity, entity_type: str) -> dict[str, Any]:
+    # Raw API fields that are noise or already exposed under another name
+    RAW_FIELD_BLACKLIST = frozenset(
+        {
+            "entry_parsed",  # HTML duplicate of entry
+            "urls",
+            "has_custom_image",
+            "has_custom_header",
+            "is_private",  # exposed as is_hidden
+        }
+    )
+
+    def _entity_to_dict(
+        self, entity: Entity, entity_type: str, include_all: bool = False
+    ) -> dict[str, Any]:
         """
         Convert entity object to dictionary.
 
         Args:
             entity: Entity object
             entity_type: Our entity type string
+            include_all: Also keep every other field the API returned, such as
+                the type-specific sheet fields, dropping nulls and noise
 
         Returns:
             Dictionary representation
@@ -813,6 +834,15 @@ class KankaService:
                 else None
             ),
         }
+
+        if include_all:
+            # Everything else the API returned; the conversions below still win
+            for key, value in entity.model_dump(mode="json").items():
+                if key in result or key in self.RAW_FIELD_BLACKLIST:
+                    continue
+                if value is None:
+                    continue
+                result[key] = value
 
         # Handle visibility - translate is_private to is_hidden
         # Entities use is_private field
