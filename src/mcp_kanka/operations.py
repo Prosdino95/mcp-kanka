@@ -16,12 +16,15 @@ from .types import (
     CreateMemberResult,
     CreatePostResult,
     DeleteEntityResult,
+    CreateRelationResult,
     DeleteMemberResult,
     DeletePostResult,
+    DeleteRelationResult,
     EntityType,
     GetEntityResult,
     UpdateEntityResult,
     UpdateMemberResult,
+    UpdateRelationResult,
     UpdatePostResult,
 )
 from .utils import (
@@ -478,13 +481,17 @@ class KankaOperations:
         return results
 
     async def get_entities(
-        self, entity_ids: list[int], include_posts: bool = False
+        self,
+        entity_ids: list[int],
+        include_posts: bool = False,
+        include_relations: bool = False,
     ) -> list[GetEntityResult]:
         """Get specific entities by ID.
 
         Args:
             entity_ids: List of entity IDs to retrieve
             include_posts: Whether to include posts for each entity
+            include_relations: Whether to include the relations each entity owns
 
         Returns:
             List of results, one per entity
@@ -493,7 +500,9 @@ class KankaOperations:
         for entity_id in entity_ids:
             try:
                 # Get entity
-                entity = self.service.get_entity_by_id(entity_id, include_posts)
+                entity = self.service.get_entity_by_id(
+                    entity_id, include_posts, include_relations
+                )
 
                 if entity:
                     data: dict[str, Any] = {
@@ -530,6 +539,9 @@ class KankaOperations:
 
                     if include_posts:
                         data["posts"] = entity.get("posts", [])
+
+                    if include_relations:
+                        data["relations"] = entity.get("relations", [])
 
                     results.append(cast(GetEntityResult, data))
                 else:
@@ -841,6 +853,148 @@ class KankaOperations:
                 error_result: DeleteMemberResult = {
                     "organisation_entity_id": organisation_entity_id,
                     "member_id": member_id,
+                    "success": False,
+                    "error": str(e),
+                }
+                results.append(error_result)
+
+        return results
+
+    async def create_relations(
+        self, relations: list[dict[str, Any]]
+    ) -> list[CreateRelationResult]:
+        """Create relations between entities.
+
+        Args:
+            relations: List of relations to create
+
+        Returns:
+            List of results, one per relation
+        """
+        results = []
+        for relation_input in relations:
+            entity_id = relation_input["entity_id"]
+            target_entity_id = relation_input["target_entity_id"]
+
+            try:
+                created = self.service.create_relation(
+                    entity_id=entity_id,
+                    target_entity_id=target_entity_id,
+                    relation=relation_input["relation"],
+                    attitude=relation_input.get("attitude"),
+                    is_hidden=relation_input.get("is_hidden", False),
+                    two_way=relation_input.get("two_way", False),
+                )
+
+                result: CreateRelationResult = {
+                    "relation_id": created["relation_id"],
+                    "entity_id": entity_id,
+                    "target_entity_id": target_entity_id,
+                    "mirror_id": created["mirror_id"],
+                    "success": True,
+                    "error": None,
+                }
+                results.append(result)
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to relate entity {entity_id} to {target_entity_id}: {e}"
+                )
+                error_result: CreateRelationResult = {
+                    "relation_id": None,
+                    "entity_id": entity_id,
+                    "target_entity_id": target_entity_id,
+                    "mirror_id": None,
+                    "success": False,
+                    "error": str(e),
+                }
+                results.append(error_result)
+
+        return results
+
+    async def update_relations(
+        self, updates: list[dict[str, Any]]
+    ) -> list[UpdateRelationResult]:
+        """Update existing relations.
+
+        Args:
+            updates: List of relation updates to apply
+
+        Returns:
+            List of results, one per relation
+        """
+        results = []
+        for update in updates:
+            entity_id = update["entity_id"]
+            relation_id = update["relation_id"]
+
+            try:
+                success = self.service.update_relation(
+                    entity_id=entity_id,
+                    relation_id=relation_id,
+                    relation=update.get("relation"),
+                    attitude=update.get("attitude"),
+                    is_hidden=update.get("is_hidden"),
+                )
+
+                result: UpdateRelationResult = {
+                    "entity_id": entity_id,
+                    "relation_id": relation_id,
+                    "success": success,
+                    "error": None,
+                }
+                results.append(result)
+
+            except Exception as e:
+                logger.error(f"Failed to update relation {relation_id}: {e}")
+                error_result: UpdateRelationResult = {
+                    "entity_id": entity_id,
+                    "relation_id": relation_id,
+                    "success": False,
+                    "error": str(e),
+                }
+                results.append(error_result)
+
+        return results
+
+    async def delete_relations(
+        self, deletions: list[dict[str, Any]]
+    ) -> list[DeleteRelationResult]:
+        """Delete relations, and by default their mirrors.
+
+        Args:
+            deletions: List of relations to delete
+
+        Returns:
+            List of results, one per relation
+        """
+        results = []
+        for deletion in deletions:
+            entity_id = deletion["entity_id"]
+            relation_id = deletion["relation_id"]
+
+            try:
+                deleted = self.service.delete_relation(
+                    entity_id=entity_id,
+                    relation_id=relation_id,
+                    delete_mirror=deletion.get("delete_mirror", True),
+                )
+
+                result: DeleteRelationResult = {
+                    "entity_id": entity_id,
+                    "relation_id": relation_id,
+                    "mirror_deleted": deleted["mirror_deleted"],
+                    "success": True,
+                    "error": None,
+                }
+                results.append(result)
+
+            except Exception as e:
+                logger.error(f"Failed to delete relation {relation_id}: {e}")
+                error_result: DeleteRelationResult = {
+                    "entity_id": entity_id,
+                    "relation_id": relation_id,
+                    "mirror_deleted": False,
                     "success": False,
                     "error": str(e),
                 }

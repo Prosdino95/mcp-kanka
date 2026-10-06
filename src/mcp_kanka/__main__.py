@@ -22,14 +22,17 @@ from .tools import (
     handle_create_entities,
     handle_create_members,
     handle_create_posts,
+    handle_create_relations,
     handle_delete_entities,
     handle_delete_members,
     handle_delete_posts,
+    handle_delete_relations,
     handle_find_entities,
     handle_get_entities,
     handle_update_entities,
     handle_update_members,
     handle_update_posts,
+    handle_update_relations,
 )
 
 # Load environment variables
@@ -313,6 +316,15 @@ async def list_tools() -> list[types.Tool]:
                         "description": "Include posts for each entity",
                         "default": False,
                     },
+                    "include_relations": {
+                        "type": "boolean",
+                        "description": (
+                            "Include the relations each entity owns, with the "
+                            "relation_id needed to update or delete them. Costs "
+                            "one extra request per entity"
+                        ),
+                        "default": False,
+                    },
                 },
                 "required": ["entity_ids"],
             },
@@ -546,6 +558,144 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="create_relations",
+            description=(
+                "Create relations between entities. Relations are directed: "
+                "by default only the side you create exists"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "relations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "entity_id": {
+                                    "type": "integer",
+                                    "description": "Entity that owns the relation",
+                                },
+                                "target_entity_id": {
+                                    "type": "integer",
+                                    "description": "Entity the relation points at",
+                                },
+                                "relation": {
+                                    "type": "string",
+                                    "description": "The label, e.g. 'Capomastro di'",
+                                },
+                                "attitude": {
+                                    "type": "integer",
+                                    "description": "Numeric attitude towards the target, may be negative",
+                                },
+                                "is_hidden": {
+                                    "type": "boolean",
+                                    "description": "If true, hidden from players (admin-only)",
+                                },
+                                "two_way": {
+                                    "type": "boolean",
+                                    "description": (
+                                        "Also create the mirror relation on the "
+                                        "target, so the link shows on both sides"
+                                    ),
+                                    "default": False,
+                                },
+                            },
+                            "required": [
+                                "entity_id",
+                                "target_entity_id",
+                                "relation",
+                            ],
+                        },
+                    }
+                },
+                "required": ["relations"],
+            },
+        ),
+        types.Tool(
+            name="update_relations",
+            description=(
+                "Update existing relations. The mirror is not touched: update "
+                "it separately to keep both sides in step"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "updates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "entity_id": {
+                                    "type": "integer",
+                                    "description": "Entity that owns the relation",
+                                },
+                                "relation_id": {
+                                    "type": "integer",
+                                    "description": (
+                                        "The relation ID, from create_relations or "
+                                        "from get_entities with include_relations"
+                                    ),
+                                },
+                                "relation": {
+                                    "type": "string",
+                                    "description": "New label, if changing it",
+                                },
+                                "attitude": {
+                                    "type": "integer",
+                                    "description": "New attitude, if changing it",
+                                },
+                                "is_hidden": {
+                                    "type": "boolean",
+                                    "description": "New visibility, if changing it",
+                                },
+                            },
+                            "required": ["entity_id", "relation_id"],
+                        },
+                    }
+                },
+                "required": ["updates"],
+            },
+        ),
+        types.Tool(
+            name="delete_relations",
+            description=(
+                "Delete relations. The mirror on the other entity is deleted "
+                "too unless delete_mirror is false"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "deletions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "entity_id": {
+                                    "type": "integer",
+                                    "description": "Entity that owns the relation",
+                                },
+                                "relation_id": {
+                                    "type": "integer",
+                                    "description": "The relation ID",
+                                },
+                                "delete_mirror": {
+                                    "type": "boolean",
+                                    "description": (
+                                        "Also delete the mirror on the target. "
+                                        "Leaving this false is how half a relation "
+                                        "is left behind"
+                                    ),
+                                    "default": True,
+                                },
+                            },
+                            "required": ["entity_id", "relation_id"],
+                        },
+                    }
+                },
+                "required": ["deletions"],
+            },
+        ),
+        types.Tool(
             name="check_entity_updates",
             description="Check which entity_ids have been modified since last sync",
             inputSchema={
@@ -596,6 +746,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             result = await handle_update_members(**arguments)
         elif name == "delete_members":
             result = await handle_delete_members(**arguments)
+        elif name == "create_relations":
+            result = await handle_create_relations(**arguments)
+        elif name == "update_relations":
+            result = await handle_update_relations(**arguments)
+        elif name == "delete_relations":
+            result = await handle_delete_relations(**arguments)
         elif name == "check_entity_updates":
             result = await handle_check_entity_updates(**arguments)
         else:

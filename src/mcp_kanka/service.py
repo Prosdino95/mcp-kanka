@@ -301,7 +301,10 @@ class KankaService:
             raise
 
     def get_entity_by_id(
-        self, entity_id: int, include_posts: bool = False
+        self,
+        entity_id: int,
+        include_posts: bool = False,
+        include_relations: bool = False,
     ) -> dict[str, Any] | None:
         """
         Get a specific entity by its entity_id.
@@ -309,6 +312,7 @@ class KankaService:
         Args:
             entity_id: Entity ID
             include_posts: Whether to include posts
+            include_relations: Whether to include the relations it owns
 
         Returns:
             Entity data with converted content
@@ -372,6 +376,21 @@ class KankaService:
                 except Exception as e:
                     logger.warning(f"Failed to get posts for entity {entity_id}: {e}")
                     result["posts"] = []
+
+            # Get relations if requested
+            if include_relations:
+                try:
+                    relations = self._relation_manager.list_relations(
+                        entity_id, limit=100
+                    )
+                    result["relations"] = [
+                        self._relation_to_dict(relation) for relation in relations
+                    ]
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to get relations for entity {entity_id}: {e}"
+                    )
+                    result["relations"] = []
 
             return result
 
@@ -742,6 +761,184 @@ class KankaService:
 
         except Exception as e:
             logger.error(f"Delete post failed: {e}")
+            raise
+
+    @property
+    def _relation_manager(self) -> Any:
+        """A manager to drive the entity-generic relations endpoint.
+
+        Relations live at entities/{entity_id}/relations, so the manager is
+        only the carrier of the call: every manager reaches the same URL.
+        Picking one directly avoids the extra API request that resolving the
+        entity's type would cost, for no benefit.
+
+        Returns:
+            An entity manager
+        """
+        return self.client.characters
+
+    def _relation_to_dict(self, relation: Any) -> dict[str, Any]:
+        """
+        Convert a relation object to a dictionary.
+
+        Args:
+            relation: Relation object
+
+        Returns:
+            Dictionary representation, with entity_ids on both sides
+        """
+        return {
+            "relation_id": relation.id,
+            "target_entity_id": relation.target_id,
+            "relation": relation.relation,
+            "attitude": relation.attitude,
+            # visibility_id 2 = admin only (hidden from players)
+            "is_hidden": relation.visibility_id == 2,
+            "mirror_id": relation.mirror_id,
+        }
+
+    def create_relation(
+        self,
+        entity_id: int,
+        target_entity_id: int,
+        relation: str,
+        attitude: int | None = None,
+        is_hidden: bool = False,
+        two_way: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Create a relation from one entity to another.
+
+        Both sides are entity_ids, so nothing has to be translated here.
+
+        Args:
+            entity_id: Entity that owns the relation
+            target_entity_id: Entity the relation points at
+            relation: The label, e.g. "Capomastro di"
+            attitude: Numeric attitude towards the target
+            is_hidden: Whether the relation is hidden from players
+            two_way: Also create the mirror relation on the target
+
+        Returns:
+            Created relation data
+        """
+        try:
+            created = self._relation_manager.create_relation(
+                entity_id,
+                target_entity_id,
+                relation,
+                attitude=attitude,
+                visibility_id=2 if is_hidden else 1,
+                two_way=two_way,
+            )
+
+            return {
+                "relation_id": created.id,
+                "entity_id": entity_id,
+                "target_entity_id": target_entity_id,
+                "mirror_id": created.mirror_id,
+            }
+
+        except Exception as e:
+            logger.error(f"Create relation failed for entity {entity_id}: {e}")
+            raise
+
+    def update_relation(
+        self,
+        entity_id: int,
+        relation_id: int,
+        relation: str | None = None,
+        attitude: int | None = None,
+        is_hidden: bool | None = None,
+    ) -> bool:
+        """
+        Update an existing relation.
+
+        The mirror is not touched: updating one side leaves the other as it was.
+
+        Args:
+            entity_id: Entity that owns the relation
+            relation_id: The relation ID
+            relation: New label, if changing it
+            attitude: New attitude, if changing it
+            is_hidden: New visibility, if changing it
+
+        Returns:
+            True if successful
+        """
+        try:
+            visibility_id = None
+            if is_hidden is not None:
+                visibility_id = 2 if is_hidden else 1
+
+            self._relation_manager.update_relation(
+                entity_id,
+                relation_id,
+                relation=relation,
+                attitude=attitude,
+                visibility_id=visibility_id,
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Update relation failed for relation {relation_id}: {e}")
+            raise
+
+    def delete_relation(
+        self, entity_id: int, relation_id: int, delete_mirror: bool = True
+    ) -> dict[str, Any]:
+        """
+        Delete a relation, and by default its mirror too.
+
+        The API deletes one side only: without delete_mirror the relation on
+        the other entity survives, orphaned, and nothing says so.
+
+        Args:
+            entity_id: Entity that owns the relation
+            relation_id: The relation ID
+            delete_mirror: Also delete the mirror on the target, when there is
+                one. Costs one extra request to look it up
+
+        Returns:
+            Deletion data, including whether a mirror was deleted
+        """
+        try:
+            mirror_id = None
+            target_entity_id = None
+
+            if delete_mirror:
+                for existing in self._relation_manager.list_relations(
+                    entity_id, limit=100
+                ):
+                    if existing.id == relation_id:
+                        mirror_id = existing.mirror_id
+                        target_entity_id = existing.target_id
+                        break
+
+            self._relation_manager.delete_relation(entity_id, relation_id)
+
+            mirror_deleted = False
+            if mirror_id and target_entity_id:
+                try:
+                    self._relation_manager.delete_relation(
+                        target_entity_id, mirror_id
+                    )
+                    mirror_deleted = True
+                except Exception as e:
+                    raise ValueError(
+                        f"Relation {relation_id} was deleted, but its mirror "
+                        f"{mirror_id} on entity {target_entity_id} was not: {e}. "
+                        "The link is now half removed"
+                    ) from e
+
+            return {
+                "entity_id": entity_id,
+                "relation_id": relation_id,
+                "mirror_deleted": mirror_deleted,
+            }
+
+        except Exception as e:
+            logger.error(f"Delete relation failed for relation {relation_id}: {e}")
             raise
 
     def _resolve_to_type_id(self, entity_id: int, expected_api_type: str) -> int:

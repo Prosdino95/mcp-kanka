@@ -55,7 +55,7 @@ def get_kanka_context() -> str:
             "examples": ["[entity:1234]", "[entity:1234|the ancient dragon]"],
             "note": "The MCP server preserves these during Markdown/HTML conversion",
         },
-        "limitations": "Entity-specific fields are written through the fields parameter. Attributes, relations, abilities and inventory live on their own endpoints and are not available yet; organisation members are, through the member tools. A search that does not name an entity_type does not cover tags, abilities, items or timelines: name the type to search those.",
+        "limitations": "Entity-specific fields are written through the fields parameter. Attributes and inventory live on their own endpoints and are not available yet; organisation members and relations are, through the member and relation tools. Relations are directed: create them with two_way to have both sides, and read them with include_relations on get_entities to get the relation_id needed to change them. A search that does not name an entity_type does not cover tags, abilities, items or timelines: name the type to search those.",
     }
 
     return json.dumps(context, indent=2)

@@ -9,13 +9,16 @@ from .types import (
     CreateEntityResult,
     CreateMemberResult,
     CreatePostResult,
+    CreateRelationResult,
     DeleteEntityResult,
     DeleteMemberResult,
     DeletePostResult,
+    DeleteRelationResult,
     GetEntityResult,
     UpdateEntityResult,
     UpdateMemberResult,
     UpdatePostResult,
+    UpdateRelationResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -96,10 +99,11 @@ async def handle_get_entities(**params: Any) -> list[GetEntityResult]:
     """
     entity_ids = params.get("entity_ids", [])
     include_posts = params.get("include_posts", False)
+    include_relations = params.get("include_relations", False)
     operations = get_operations()
 
     # Delegate to operations layer
-    return await operations.get_entities(entity_ids, include_posts)
+    return await operations.get_entities(entity_ids, include_posts, include_relations)
 
 
 async def handle_delete_entities(**params: Any) -> list[DeleteEntityResult]:
@@ -219,6 +223,57 @@ async def handle_delete_members(**params: Any) -> list[DeleteMemberResult]:
 
     # Delegate to operations layer
     return await operations.delete_members(deletions)
+
+
+async def handle_create_relations(**params: Any) -> list[CreateRelationResult]:
+    """
+    Create relations between entities.
+
+    Args:
+        **params: Parameters from CreateRelationsParams
+
+    Returns:
+        List of creation results
+    """
+    relations = params.get("relations", [])
+    operations = get_operations()
+
+    # Delegate to operations layer
+    return await operations.create_relations(relations)
+
+
+async def handle_update_relations(**params: Any) -> list[UpdateRelationResult]:
+    """
+    Update existing relations.
+
+    Args:
+        **params: Parameters from UpdateRelationsParams
+
+    Returns:
+        List of update results
+    """
+    updates = params.get("updates", [])
+    operations = get_operations()
+
+    # Delegate to operations layer
+    return await operations.update_relations(updates)
+
+
+async def handle_delete_relations(**params: Any) -> list[DeleteRelationResult]:
+    """
+    Delete relations, and by default their mirrors.
+
+    Args:
+        **params: Parameters from DeleteRelationsParams
+
+    Returns:
+        List of deletion results
+    """
+    deletions = params.get("deletions", [])
+    operations = get_operations()
+
+    # Delegate to operations layer
+    return await operations.delete_relations(deletions)
 
 
 async def handle_check_entity_updates(**params: Any) -> CheckEntityUpdatesResult:

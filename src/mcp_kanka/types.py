@@ -87,6 +87,7 @@ class GetEntitiesParams(TypedDict):
 
     entity_ids: list[int]
     include_posts: bool | None
+    include_relations: bool | None
 
 
 class DeleteEntitiesParams(TypedDict):
@@ -221,6 +222,17 @@ class UpdateEntityResult(TypedDict):
     error: str | None
 
 
+class RelationData(TypedDict):
+    """Relation data as returned with an entity."""
+
+    relation_id: int
+    target_entity_id: int
+    relation: str | None
+    attitude: int | None
+    is_hidden: bool
+    mirror_id: int | None
+
+
 class GetEntityResult(TypedDict, total=False):
     """Result of getting an entity."""
 
@@ -235,6 +247,7 @@ class GetEntityResult(TypedDict, total=False):
     created_at: str | None  # ISO 8601 timestamp
     updated_at: str | None  # ISO 8601 timestamp
     posts: list[PostData] | None
+    relations: list[RelationData] | None
     success: bool
     error: str | None
     is_completed: bool | None  # For quests only
@@ -347,6 +360,83 @@ class DeleteMemberResult(TypedDict):
 
     organisation_entity_id: int
     member_id: int
+    success: bool
+    error: str | None
+
+
+class RelationInput(TypedDict):
+    """Input for creating a relation between two entities."""
+
+    entity_id: int
+    target_entity_id: int
+    relation: str
+    attitude: int | None
+    is_hidden: bool | None
+    two_way: bool | None
+
+
+class CreateRelationsParams(TypedDict):
+    """Parameters for create_relations tool."""
+
+    relations: list[RelationInput]
+
+
+class RelationUpdate(TypedDict):
+    """Update for a relation."""
+
+    entity_id: int
+    relation_id: int
+    relation: str | None
+    attitude: int | None
+    is_hidden: bool | None
+
+
+class UpdateRelationsParams(TypedDict):
+    """Parameters for update_relations tool."""
+
+    updates: list[RelationUpdate]
+
+
+class RelationDeletion(TypedDict):
+    """Deletion of a relation."""
+
+    entity_id: int
+    relation_id: int
+    delete_mirror: bool | None
+
+
+class DeleteRelationsParams(TypedDict):
+    """Parameters for delete_relations tool."""
+
+    deletions: list[RelationDeletion]
+
+
+class CreateRelationResult(TypedDict):
+    """Result of creating a relation."""
+
+    relation_id: int | None
+    entity_id: int
+    target_entity_id: int
+    mirror_id: int | None
+    success: bool
+    error: str | None
+
+
+class UpdateRelationResult(TypedDict):
+    """Result of updating a relation."""
+
+    entity_id: int
+    relation_id: int
+    success: bool
+    error: str | None
+
+
+class DeleteRelationResult(TypedDict):
+    """Result of deleting a relation."""
+
+    entity_id: int
+    relation_id: int
+    mirror_deleted: bool
     success: bool
     error: str | None
 
