@@ -84,16 +84,26 @@ async def list_tools() -> list[types.Tool]:
                     "entity_type": {
                         "type": "string",
                         "enum": [
+                            "ability",
                             "character",
                             "creature",
+                            "event",
+                            "family",
+                            "item",
                             "location",
                             "organization",
                             "race",
                             "note",
                             "journal",
                             "quest",
+                            "tag",
+                            "timeline",
                         ],
-                        "description": "Entity type to filter by",
+                        "description": (
+                            "Entity type to filter by. A search without this "
+                            "does not cover 'tag', 'ability', 'item' or "
+                            "'timeline': name the type here to search those"
+                        ),
                     },
                     "name": {
                         "type": "string",
@@ -162,14 +172,20 @@ async def list_tools() -> list[types.Tool]:
                                 "entity_type": {
                                     "type": "string",
                                     "enum": [
+                                        "ability",
                                         "character",
                                         "creature",
+                                        "event",
+                                        "family",
+                                        "item",
                                         "location",
                                         "organization",
                                         "race",
                                         "note",
                                         "journal",
                                         "quest",
+                                        "tag",
+                                        "timeline",
                                     ],
                                     "description": "Entity type",
                                 },

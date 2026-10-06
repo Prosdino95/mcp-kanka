@@ -207,3 +207,53 @@ class TestOperationsMembers:
                 "error": None,
             }
         ]
+
+
+class TestSilentlyIgnoredFields:
+    """Fields this Kanka version takes and drops must be rejected too."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.service, self.mock_client = make_service()
+
+    def test_character_id_is_rejected(self):
+        """Test that character_id fails loudly instead of vanishing."""
+        with pytest.raises(ValueError, match="character_id"):
+            self.service.create_entity(
+                entity_type="item",
+                name="Lanterna",
+                fields={"character_id": 1},
+            )
+
+        self.mock_client.items.create.assert_not_called()
+
+    def test_revert_order_is_rejected(self):
+        """Test that revert_order fails loudly instead of staying at 0."""
+        with pytest.raises(ValueError, match="revert_order"):
+            self.service.create_entity(
+                entity_type="timeline",
+                name="Cronologia",
+                fields={"revert_order": 1},
+            )
+
+    def test_update_is_guarded_too(self):
+        """Test that the guard also covers updates."""
+        self.service.get_entity_by_id = MagicMock(
+            return_value={"id": 1, "entity_id": 4, "entity_type": "item"}
+        )
+
+        with pytest.raises(ValueError, match="silently ignores"):
+            self.service.update_entity(
+                entity_id=4, name="Lanterna", fields={"character_id": 1}
+            )
+
+    def test_location_id_still_works(self):
+        """Test that the guard does not catch fields that do work."""
+        self.mock_client.items.create.return_value = FakeEntity()
+
+        self.service.create_entity(
+            entity_type="item", name="Lanterna", fields={"location_id": 2}
+        )
+
+        _, kwargs = self.mock_client.items.create.call_args
+        assert kwargs["location_id"] == 2

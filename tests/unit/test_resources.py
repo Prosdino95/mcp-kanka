@@ -38,18 +38,24 @@ class TestGetKankaContext:
 
         entities = data["supported_entities"]
         assert isinstance(entities, dict)
-        assert len(entities) == 8
+        assert len(entities) == 14
 
         # Check all expected entity types
         expected_types = [
             "character",
             "creature",
+            "event",
+            "family",
             "location",
             "organization",
             "race",
             "note",
             "journal",
             "quest",
+            "tag",
+            "ability",
+            "item",
+            "timeline",
         ]
         for expected in expected_types:
             assert expected in entities

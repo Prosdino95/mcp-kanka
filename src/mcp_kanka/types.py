@@ -4,14 +4,20 @@ from typing import Any, Literal, TypedDict
 
 # Supported entity types
 EntityType = Literal[
+    "ability",
     "character",
     "creature",
+    "event",
+    "family",
+    "item",
     "location",
     "organization",
     "race",
     "note",
     "journal",
     "quest",
+    "tag",
+    "timeline",
 ]
 
 

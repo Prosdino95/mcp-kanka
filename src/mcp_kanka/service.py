@@ -9,9 +9,13 @@ from typing import Any
 from kanka import KankaClient
 from kanka.exceptions import KankaException
 from kanka.models import (
+    Ability,
     Character,
     Creature,
     Entity,
+    Event,
+    Family,
+    Item,
     Journal,
     Location,
     Note,
@@ -19,6 +23,7 @@ from kanka.models import (
     Quest,
     Race,
     Tag,
+    Timeline,
 )
 
 from .converter import ContentConverter
@@ -32,26 +37,56 @@ class KankaService:
 
     # Map entity types to their model classes
     ENTITY_TYPE_MAP = {
+        "ability": Ability,
         "character": Character,
         "creature": Creature,
+        "event": Event,
+        "family": Family,
+        "item": Item,
         "location": Location,
         "organization": Organisation,  # Note: Kanka uses "organisation"
         "race": Race,
         "note": Note,
         "journal": Journal,
         "quest": Quest,
+        "tag": Tag,
+        "timeline": Timeline,
     }
 
     # Map entity types to their Kanka API endpoints
     API_ENDPOINT_MAP = {
+        "ability": "abilities",
         "character": "characters",
         "creature": "creatures",
+        "event": "events",
+        "family": "families",
+        "item": "items",
         "location": "locations",
         "organization": "organisations",  # API uses British spelling
         "race": "races",
         "note": "notes",
         "journal": "journals",
         "quest": "quests",
+        "tag": "tags",
+        "timeline": "timelines",
+    }
+
+    # Map Kanka's own type names to ours (they differ only for organisations)
+    API_TYPE_MAP = {
+        "ability": "ability",
+        "character": "character",
+        "creature": "creature",
+        "event": "event",
+        "family": "family",
+        "item": "item",
+        "journal": "journal",
+        "location": "location",
+        "note": "note",
+        "organisation": "organization",
+        "quest": "quest",
+        "race": "race",
+        "tag": "tag",
+        "timeline": "timeline",
     }
 
     def __init__(self) -> None:
@@ -290,24 +325,16 @@ class KankaService:
             entity_type = found_entity.get("type")
 
             # Map to our internal type
-            our_type = None
-            if entity_type == "character":
-                our_type = "character"
-            elif entity_type == "creature":
-                our_type = "creature"
-            elif entity_type == "location":
-                our_type = "location"
-            elif entity_type == "organisation":
-                our_type = "organization"
-            elif entity_type == "race":
-                our_type = "race"
-            elif entity_type == "note":
-                our_type = "note"
-            elif entity_type == "journal":
-                our_type = "journal"
-            elif entity_type == "quest":
-                our_type = "quest"
-            else:
+            our_type = (
+                self.API_TYPE_MAP.get(entity_type)
+                if isinstance(entity_type, str)
+                else None
+            )
+            if our_type is None:
+                logger.warning(
+                    f"Entity {entity_id} is of type '{entity_type}', "
+                    "which this server does not support"
+                )
                 return None
 
             # The entity endpoint returns the data in 'child' field
@@ -453,6 +480,8 @@ class KankaService:
             # Create entity
             entity = manager.create(**data)
 
+            self._invalidate_tag_cache_for(entity_type)
+
             # Convert to our format
             result = self._entity_to_dict(entity, entity_type)
             result["mention"] = f"[entity:{entity.entity_id}]"
@@ -547,6 +576,8 @@ class KankaService:
             # Update entity
             manager.update(entity_data["id"], **data)
 
+            # A renamed tag invalidates the name-to-ID cache
+            self._invalidate_tag_cache_for(entity_type)
             return True
 
         except Exception as e:
@@ -575,6 +606,7 @@ class KankaService:
             # Delete entity
             manager.delete(entity_data["id"])
 
+            self._invalidate_tag_cache_for(entity_type)
             return True
 
         except Exception as e:
@@ -885,6 +917,20 @@ class KankaService:
 
         return tag_ids
 
+    def _invalidate_tag_cache_for(self, entity_type: str) -> None:
+        """Drop the tag cache when a tag entity itself changed.
+
+        The cache maps tag names to IDs and is loaded once per session, so
+        creating, renaming or deleting a tag through the entity tools would
+        otherwise leave it stale: a name it does not know gets created a
+        second time, and an ID it still holds may no longer exist.
+
+        Args:
+            entity_type: Our entity type string for the changed entity
+        """
+        if entity_type == "tag":
+            self._tag_cache = {}
+
     def _load_tag_cache(self) -> None:
         """Load all tags into cache."""
         self._tag_cache = {}
@@ -972,6 +1018,15 @@ class KankaService:
         ),
         "entity_events": (
             "entity events are not supported yet, add them in the Kanka UI"
+        ),
+        "character_id": (
+            "this Kanka version has no character_id: items and quests accept it "
+            "and drop it, journals fail with a 500. An item's owner lives in the "
+            "inventory sub-resource, which is not supported yet"
+        ),
+        "revert_order": (
+            "timelines accept revert_order and keep it at 0, on create and on "
+            "update alike. Set the timeline order in the Kanka UI"
         ),
     }
 

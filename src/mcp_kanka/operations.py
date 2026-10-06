@@ -78,15 +78,34 @@ class PartialSuccessError(KankaOperationsError):
 
 
 ALL_ENTITY_TYPES: list[EntityType] = [
+    "ability",
     "character",
     "creature",
+    "event",
+    "family",
+    "item",
     "location",
     "organization",
     "race",
     "note",
     "journal",
     "quest",
+    "tag",
+    "timeline",
 ]
+
+# Types a search that does not name one leaves alone. Every type in a sweep
+# costs one API request, and these are either numerous or rarely what such a
+# search is after. Name them in entity_type to search them.
+UNTYPED_SEARCH_EXCLUDED: set[EntityType] = {"tag", "ability", "item", "timeline"}
+
+# Types swept by a search that does not name one
+UNTYPED_SEARCH_TYPES: list[EntityType] = [
+    entity_type
+    for entity_type in ALL_ENTITY_TYPES
+    if entity_type not in UNTYPED_SEARCH_EXCLUDED
+]
+
 
 class KankaOperations:
     """High-level operations for Kanka, used by both MCP tools and external scripts."""
@@ -124,20 +143,21 @@ class KankaOperations:
     def _list_entities_of_all_types(
         self, last_synced: str | None, include_full: bool
     ) -> list[dict[str, Any]]:
-        """List every entity of every supported type.
+        """List every entity of every type an untyped search covers.
 
-        This costs at least one API request per type, and more for types that
-        span several pages, so it eats into the API rate limit quickly.
+        Several types are excluded, see UNTYPED_SEARCH_EXCLUDED. This costs at least one
+        API request per type, and more for types that span several pages, so
+        it eats into the API rate limit quickly.
 
         Args:
             last_synced: ISO timestamp to only get entities modified after it
             include_full: Whether to fetch related data as well
 
         Returns:
-            List of entity dictionaries across all types
+            List of entity dictionaries across all searched types
         """
         entities: list[dict[str, Any]] = []
-        for et in ALL_ENTITY_TYPES:
+        for et in UNTYPED_SEARCH_TYPES:
             try:
                 entities.extend(
                     self._list_entities_of_type(et, last_synced, include_full)
@@ -314,23 +334,13 @@ class KankaOperations:
             List of results, one per entity (success or failure)
         """
         results = []
-        valid_types = [
-            "character",
-            "creature",
-            "location",
-            "organization",
-            "race",
-            "note",
-            "journal",
-            "quest",
-        ]
 
         for entity_input in entities:
             entity_type = entity_input.get("entity_type")
             entity_name = entity_input.get("name", "")
 
             # Validate entity type
-            if not entity_type or entity_type not in valid_types:
+            if not entity_type or entity_type not in ALL_ENTITY_TYPES:
                 logger.error(
                     f"Invalid entity_type '{entity_type}' for entity '{entity_name}'"
                 )
@@ -340,7 +350,7 @@ class KankaOperations:
                     "name": entity_name,
                     "mention": None,
                     "success": False,
-                    "error": f"Invalid entity_type '{entity_type}'. Must be one of: {', '.join(valid_types)}",
+                    "error": f"Invalid entity_type '{entity_type}'. Must be one of: {', '.join(ALL_ENTITY_TYPES)}",
                 }
                 results.append(error_result)
                 continue

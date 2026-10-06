@@ -23,6 +23,20 @@ def get_kanka_context() -> str:
             "note": "Private GM notes and session digests",
             "journal": "Session summaries and campaign chronicles",
             "quest": "Missions, objectives, and story arcs",
+            "event": "Things that happened, with an optional date field",
+            "ability": "Spells, powers, feats and other named capabilities",
+            "item": "Objects, equipment and treasure",
+            "timeline": (
+                "Chronologies of the world. Their eras live on a separate "
+                "endpoint and cannot be written yet"
+            ),
+            "family": "Bloodlines, houses, and clans",
+            "tag": (
+                "Labels used to categorise entities. Also usable by name "
+                "through the tags field on any entity. Their colour field "
+                "accepts only: aqua, black, brown, grey, green, light-blue, "
+                "maroon, navy, orange, pink, purple, red, teal, yellow"
+            ),
         },
         "core_fields": {
             "name": "Required. The entity's name",
@@ -41,7 +55,7 @@ def get_kanka_context() -> str:
             "examples": ["[entity:1234]", "[entity:1234|the ancient dragon]"],
             "note": "The MCP server preserves these during Markdown/HTML conversion",
         },
-        "limitations": "This MCP server only supports basic fields. Advanced features like attributes, relations, abilities, and most entity-specific fields are not available.",
+        "limitations": "Entity-specific fields are written through the fields parameter. Attributes, relations, abilities and inventory live on their own endpoints and are not available yet; organisation members are, through the member tools. A search that does not name an entity_type does not cover tags, abilities, items or timelines: name the type to search those.",
     }
 
     return json.dumps(context, indent=2)
