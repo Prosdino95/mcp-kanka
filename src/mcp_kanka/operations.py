@@ -13,12 +13,15 @@ from .service import KankaService, get_service
 from .types import (
     CheckEntityUpdatesResult,
     CreateEntityResult,
+    CreateMemberResult,
     CreatePostResult,
     DeleteEntityResult,
+    DeleteMemberResult,
     DeletePostResult,
     EntityType,
     GetEntityResult,
     UpdateEntityResult,
+    UpdateMemberResult,
     UpdatePostResult,
 )
 from .utils import (
@@ -693,6 +696,141 @@ class KankaOperations:
                 error_result: DeletePostResult = {
                     "entity_id": deletion["entity_id"],
                     "post_id": deletion["post_id"],
+                    "success": False,
+                    "error": str(e),
+                }
+                results.append(error_result)
+
+        return results
+
+    async def create_members(
+        self, members: list[dict[str, Any]]
+    ) -> list[CreateMemberResult]:
+        """Add characters to organisations.
+
+        Args:
+            members: List of memberships to create
+
+        Returns:
+            List of results, one per membership
+        """
+        results = []
+        for member_input in members:
+            organisation_entity_id = member_input["organisation_entity_id"]
+            character_entity_id = member_input["character_entity_id"]
+
+            try:
+                created = self.service.create_member(
+                    organisation_entity_id=organisation_entity_id,
+                    character_entity_id=character_entity_id,
+                    role=member_input.get("role"),
+                    is_hidden=member_input.get("is_hidden", False),
+                )
+
+                result: CreateMemberResult = {
+                    "member_id": created["member_id"],
+                    "organisation_entity_id": organisation_entity_id,
+                    "character_entity_id": character_entity_id,
+                    "success": True,
+                    "error": None,
+                }
+                results.append(result)
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to add character {character_entity_id} to "
+                    f"organisation {organisation_entity_id}: {e}"
+                )
+                error_result: CreateMemberResult = {
+                    "member_id": None,
+                    "organisation_entity_id": organisation_entity_id,
+                    "character_entity_id": character_entity_id,
+                    "success": False,
+                    "error": str(e),
+                }
+                results.append(error_result)
+
+        return results
+
+    async def update_members(
+        self, updates: list[dict[str, Any]]
+    ) -> list[UpdateMemberResult]:
+        """Update existing memberships.
+
+        Args:
+            updates: List of membership updates to apply
+
+        Returns:
+            List of results, one per membership
+        """
+        results = []
+        for update in updates:
+            organisation_entity_id = update["organisation_entity_id"]
+            member_id = update["member_id"]
+
+            try:
+                success = self.service.update_member(
+                    organisation_entity_id=organisation_entity_id,
+                    member_id=member_id,
+                    role=update.get("role"),
+                    is_hidden=update.get("is_hidden"),
+                )
+
+                result: UpdateMemberResult = {
+                    "organisation_entity_id": organisation_entity_id,
+                    "member_id": member_id,
+                    "success": success,
+                    "error": None,
+                }
+                results.append(result)
+
+            except Exception as e:
+                logger.error(f"Failed to update member {member_id}: {e}")
+                error_result: UpdateMemberResult = {
+                    "organisation_entity_id": organisation_entity_id,
+                    "member_id": member_id,
+                    "success": False,
+                    "error": str(e),
+                }
+                results.append(error_result)
+
+        return results
+
+    async def delete_members(
+        self, deletions: list[dict[str, Any]]
+    ) -> list[DeleteMemberResult]:
+        """Remove memberships from organisations.
+
+        Args:
+            deletions: List of memberships to remove
+
+        Returns:
+            List of results, one per membership
+        """
+        results = []
+        for deletion in deletions:
+            organisation_entity_id = deletion["organisation_entity_id"]
+            member_id = deletion["member_id"]
+
+            try:
+                success = self.service.delete_member(
+                    organisation_entity_id=organisation_entity_id,
+                    member_id=member_id,
+                )
+
+                result: DeleteMemberResult = {
+                    "organisation_entity_id": organisation_entity_id,
+                    "member_id": member_id,
+                    "success": success,
+                    "error": None,
+                }
+                results.append(result)
+
+            except Exception as e:
+                logger.error(f"Failed to remove member {member_id}: {e}")
+                error_result: DeleteMemberResult = {
+                    "organisation_entity_id": organisation_entity_id,
+                    "member_id": member_id,
                     "success": False,
                     "error": str(e),
                 }

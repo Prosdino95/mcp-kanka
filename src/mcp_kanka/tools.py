@@ -7,11 +7,14 @@ from .operations import get_operations
 from .types import (
     CheckEntityUpdatesResult,
     CreateEntityResult,
+    CreateMemberResult,
     CreatePostResult,
     DeleteEntityResult,
+    DeleteMemberResult,
     DeletePostResult,
     GetEntityResult,
     UpdateEntityResult,
+    UpdateMemberResult,
     UpdatePostResult,
 )
 
@@ -165,6 +168,57 @@ async def handle_delete_posts(**params: Any) -> list[DeletePostResult]:
 
     # Delegate to operations layer
     return await operations.delete_posts(deletions)
+
+
+async def handle_create_members(**params: Any) -> list[CreateMemberResult]:
+    """
+    Add characters to organisations.
+
+    Args:
+        **params: Parameters from CreateMembersParams
+
+    Returns:
+        List of creation results
+    """
+    members = params.get("members", [])
+    operations = get_operations()
+
+    # Delegate to operations layer
+    return await operations.create_members(members)
+
+
+async def handle_update_members(**params: Any) -> list[UpdateMemberResult]:
+    """
+    Update existing organisation memberships.
+
+    Args:
+        **params: Parameters from UpdateMembersParams
+
+    Returns:
+        List of update results
+    """
+    updates = params.get("updates", [])
+    operations = get_operations()
+
+    # Delegate to operations layer
+    return await operations.update_members(updates)
+
+
+async def handle_delete_members(**params: Any) -> list[DeleteMemberResult]:
+    """
+    Remove memberships from organisations.
+
+    Args:
+        **params: Parameters from DeleteMembersParams
+
+    Returns:
+        List of deletion results
+    """
+    deletions = params.get("deletions", [])
+    operations = get_operations()
+
+    # Delegate to operations layer
+    return await operations.delete_members(deletions)
 
 
 async def handle_check_entity_updates(**params: Any) -> CheckEntityUpdatesResult:

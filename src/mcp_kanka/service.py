@@ -352,6 +352,28 @@ class KankaService:
             logger.error(f"Get entity failed for {entity_id}: {e}")
             return None
 
+    def _reject_unwritable_fields(self, fields: dict[str, Any]) -> None:
+        """Reject fields the API accepts and then silently ignores.
+
+        These live on their own endpoints, so passing them through `fields`
+        looks like it worked - the call returns success and nothing changes.
+
+        Args:
+            fields: Arbitrary fields about to be merged into a payload
+
+        Raises:
+            ValueError: If any field cannot be written this way
+        """
+        offending = [key for key in fields if key in self.UNWRITABLE_FIELDS]
+        if offending:
+            details = "; ".join(
+                f"'{key}' - {self.UNWRITABLE_FIELDS[key]}" for key in offending
+            )
+            raise ValueError(
+                "These fields cannot be written through 'fields'. The Kanka API "
+                f"accepts them and silently ignores them: {details}"
+            )
+
     def create_entity(
         self,
         entity_type: EntityType,
@@ -425,6 +447,7 @@ class KankaService:
 
             # Merge arbitrary API fields last so they win
             if fields:
+                self._reject_unwritable_fields(fields)
                 data.update(fields)
 
             # Create entity
@@ -518,6 +541,7 @@ class KankaService:
 
             # Merge arbitrary API fields last so they win
             if fields:
+                self._reject_unwritable_fields(fields)
                 data.update(fields)
 
             # Update entity
@@ -688,6 +712,147 @@ class KankaService:
             logger.error(f"Delete post failed: {e}")
             raise
 
+    def _resolve_to_type_id(self, entity_id: int, expected_api_type: str) -> int:
+        """Resolve an entity_id to the type-specific ID the API wants.
+
+        Goes straight to the entity endpoint so that authentication and
+        network failures surface as themselves instead of being reported
+        as a missing entity.
+
+        Args:
+            entity_id: Universal entity ID
+            expected_api_type: Kanka's own type name, e.g. "organisation"
+
+        Returns:
+            The type-specific ID of the entity
+
+        Raises:
+            ValueError: If the entity is of the wrong type or has no child data
+            KankaException: If the API call itself fails
+        """
+        found = self.client.entity(entity_id)
+
+        api_type = found.get("type")
+        if api_type != expected_api_type:
+            raise ValueError(
+                f"Entity {entity_id} is a {api_type}, expected a {expected_api_type}"
+            )
+
+        child = found.get("child") or {}
+        type_id = child.get("id")
+        if not type_id:
+            raise ValueError(f"Entity {entity_id} has no {expected_api_type} data")
+
+        return int(type_id)
+
+    def create_member(
+        self,
+        organisation_entity_id: int,
+        character_entity_id: int,
+        role: str | None = None,
+        is_hidden: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Add a character to an organisation.
+
+        Both entities are given as entity_ids, like everywhere else in this
+        server; the type-specific IDs the members endpoint wants are resolved
+        here, at the cost of one API call each.
+
+        Args:
+            organisation_entity_id: Entity ID of the organisation
+            character_entity_id: Entity ID of the character
+            role: The character's role in the organisation
+            is_hidden: Whether the membership is hidden from players
+
+        Returns:
+            Created membership data
+        """
+        try:
+            organisation_id = self._resolve_to_type_id(
+                organisation_entity_id, "organisation"
+            )
+            character_id = self._resolve_to_type_id(character_entity_id, "character")
+
+            member = self.client.organisations.add_member(
+                organisation_id,
+                character_id,
+                role=role,
+                is_private=is_hidden,
+            )
+
+            return {
+                "member_id": member.id,
+                "organisation_entity_id": organisation_entity_id,
+                "character_entity_id": character_entity_id,
+            }
+
+        except Exception as e:
+            logger.error(f"Create member failed: {e}")
+            raise
+
+    def update_member(
+        self,
+        organisation_entity_id: int,
+        member_id: int,
+        role: str | None = None,
+        is_hidden: bool | None = None,
+    ) -> bool:
+        """
+        Update an existing membership.
+
+        Args:
+            organisation_entity_id: Entity ID of the organisation
+            member_id: Membership ID, as returned by create_member or listed
+                in the organisation's members field
+            role: New role, if changing it
+            is_hidden: New visibility, if changing it
+
+        Returns:
+            True if successful
+        """
+        try:
+            organisation_id = self._resolve_to_type_id(
+                organisation_entity_id, "organisation"
+            )
+
+            self.client.organisations.update_member(
+                organisation_id,
+                member_id,
+                role=role,
+                is_private=is_hidden,
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Update member failed for member {member_id}: {e}")
+            raise
+
+    def delete_member(self, organisation_entity_id: int, member_id: int) -> bool:
+        """
+        Remove a membership from an organisation.
+
+        Only the membership is removed; the character itself is untouched.
+
+        Args:
+            organisation_entity_id: Entity ID of the organisation
+            member_id: Membership ID (not the character's entity ID)
+
+        Returns:
+            True if successful
+        """
+        try:
+            organisation_id = self._resolve_to_type_id(
+                organisation_entity_id, "organisation"
+            )
+
+            self.client.organisations.remove_member(organisation_id, member_id)
+            return True
+
+        except Exception as e:
+            logger.error(f"Delete member failed for member {member_id}: {e}")
+            raise
+
     def _get_or_create_tag_ids(self, tag_names: list[str]) -> list[int]:
         """
         Get or create tags by name.
@@ -789,6 +954,26 @@ class KankaService:
                 tag_names.append(str(tag_item))
 
         return tag_names
+
+    # Fields that only look writable: the API takes them and does nothing
+    UNWRITABLE_FIELDS = {
+        "members": (
+            "organisation members have their own tools: create_members, "
+            "update_members, delete_members"
+        ),
+        "posts": "posts have their own tools: create_posts, update_posts, delete_posts",
+        "relations": "entity relations are not supported yet, add them in the Kanka UI",
+        "attributes": (
+            "entity attributes are not supported yet, add them in the Kanka UI"
+        ),
+        "inventory": "inventory is not supported yet, add it in the Kanka UI",
+        "entity_abilities": (
+            "entity abilities are not supported yet, add them in the Kanka UI"
+        ),
+        "entity_events": (
+            "entity events are not supported yet, add them in the Kanka UI"
+        ),
+    }
 
     # Raw API fields that are noise or already exposed under another name
     RAW_FIELD_BLACKLIST = frozenset(

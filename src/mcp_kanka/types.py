@@ -274,6 +274,77 @@ class DeletePostResult(TypedDict):
     error: str | None
 
 
+class MemberInput(TypedDict):
+    """Input for adding a character to an organisation."""
+
+    organisation_entity_id: int
+    character_entity_id: int
+    role: str | None
+    is_hidden: bool | None
+
+
+class CreateMembersParams(TypedDict):
+    """Parameters for create_members tool."""
+
+    members: list[MemberInput]
+
+
+class MemberUpdate(TypedDict):
+    """Update for an organisation membership."""
+
+    organisation_entity_id: int
+    member_id: int
+    role: str | None
+    is_hidden: bool | None
+
+
+class UpdateMembersParams(TypedDict):
+    """Parameters for update_members tool."""
+
+    updates: list[MemberUpdate]
+
+
+class MemberDeletion(TypedDict):
+    """Deletion of an organisation membership."""
+
+    organisation_entity_id: int
+    member_id: int
+
+
+class DeleteMembersParams(TypedDict):
+    """Parameters for delete_members tool."""
+
+    deletions: list[MemberDeletion]
+
+
+class CreateMemberResult(TypedDict):
+    """Result of adding a member to an organisation."""
+
+    member_id: int | None
+    organisation_entity_id: int
+    character_entity_id: int
+    success: bool
+    error: str | None
+
+
+class UpdateMemberResult(TypedDict):
+    """Result of updating a membership."""
+
+    organisation_entity_id: int
+    member_id: int
+    success: bool
+    error: str | None
+
+
+class DeleteMemberResult(TypedDict):
+    """Result of removing a membership."""
+
+    organisation_entity_id: int
+    member_id: int
+    success: bool
+    error: str | None
+
+
 # Kanka context resource structure
 class KankaContextFields(TypedDict):
     """Core fields description."""

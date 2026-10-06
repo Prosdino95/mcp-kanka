@@ -20,12 +20,15 @@ from .resources import get_kanka_context
 from .tools import (
     handle_check_entity_updates,
     handle_create_entities,
+    handle_create_members,
     handle_create_posts,
     handle_delete_entities,
+    handle_delete_members,
     handle_delete_posts,
     handle_find_entities,
     handle_get_entities,
     handle_update_entities,
+    handle_update_members,
     handle_update_posts,
 )
 
@@ -412,6 +415,121 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="create_members",
+            description=(
+                "Add characters to organisations. Members are not a field of "
+                "the organisation: writing 'members' through 'fields' is "
+                "accepted by the API and does nothing"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "members": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "organisation_entity_id": {
+                                    "type": "integer",
+                                    "description": "Entity ID of the organisation",
+                                },
+                                "character_entity_id": {
+                                    "type": "integer",
+                                    "description": "Entity ID of the character",
+                                },
+                                "role": {
+                                    "type": "string",
+                                    "description": "The character's role in the organisation (optional)",
+                                },
+                                "is_hidden": {
+                                    "type": "boolean",
+                                    "description": "If true, hidden from players (admin-only)",
+                                },
+                            },
+                            "required": [
+                                "organisation_entity_id",
+                                "character_entity_id",
+                            ],
+                        },
+                    }
+                },
+                "required": ["members"],
+            },
+        ),
+        types.Tool(
+            name="update_members",
+            description="Update existing organisation memberships",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "updates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "organisation_entity_id": {
+                                    "type": "integer",
+                                    "description": "Entity ID of the organisation",
+                                },
+                                "member_id": {
+                                    "type": "integer",
+                                    "description": (
+                                        "The membership ID, from create_members or "
+                                        "from the 'members' list returned by "
+                                        "get_entities on the organisation. NOT the "
+                                        "character's entity ID"
+                                    ),
+                                },
+                                "role": {
+                                    "type": "string",
+                                    "description": "New role, if changing it",
+                                },
+                                "is_hidden": {
+                                    "type": "boolean",
+                                    "description": "New visibility, if changing it",
+                                },
+                            },
+                            "required": ["organisation_entity_id", "member_id"],
+                        },
+                    }
+                },
+                "required": ["updates"],
+            },
+        ),
+        types.Tool(
+            name="delete_members",
+            description=(
+                "Remove memberships from organisations. Only the membership is "
+                "removed, the character itself is untouched"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "deletions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "organisation_entity_id": {
+                                    "type": "integer",
+                                    "description": "Entity ID of the organisation",
+                                },
+                                "member_id": {
+                                    "type": "integer",
+                                    "description": (
+                                        "The membership ID, NOT the character's "
+                                        "entity ID"
+                                    ),
+                                },
+                            },
+                            "required": ["organisation_entity_id", "member_id"],
+                        },
+                    }
+                },
+                "required": ["deletions"],
+            },
+        ),
+        types.Tool(
             name="check_entity_updates",
             description="Check which entity_ids have been modified since last sync",
             inputSchema={
@@ -456,6 +574,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             result = await handle_update_posts(**arguments)
         elif name == "delete_posts":
             result = await handle_delete_posts(**arguments)
+        elif name == "create_members":
+            result = await handle_create_members(**arguments)
+        elif name == "update_members":
+            result = await handle_update_members(**arguments)
+        elif name == "delete_members":
+            result = await handle_delete_members(**arguments)
         elif name == "check_entity_updates":
             result = await handle_check_entity_updates(**arguments)
         else:
