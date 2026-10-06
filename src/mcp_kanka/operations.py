@@ -16,6 +16,7 @@ from .types import (
     CreatePostResult,
     DeleteEntityResult,
     DeletePostResult,
+    EntityType,
     GetEntityResult,
     UpdateEntityResult,
     UpdatePostResult,
@@ -73,6 +74,17 @@ class PartialSuccessError(KankaOperationsError):
         )
 
 
+ALL_ENTITY_TYPES: list[EntityType] = [
+    "character",
+    "creature",
+    "location",
+    "organization",
+    "race",
+    "note",
+    "journal",
+    "quest",
+]
+
 class KankaOperations:
     """High-level operations for Kanka, used by both MCP tools and external scripts."""
 
@@ -83,6 +95,54 @@ class KankaOperations:
             service: Optional KankaService instance. If not provided, creates a new one.
         """
         self.service = service or KankaService()
+
+    def _list_entities_of_type(
+        self, entity_type: EntityType, last_synced: str | None, include_full: bool
+    ) -> list[dict[str, Any]]:
+        """List every entity of one type, converted to dictionaries.
+
+        Args:
+            entity_type: Type to list
+            last_synced: ISO timestamp to only get entities modified after it
+            include_full: Whether to fetch related data as well
+
+        Returns:
+            List of entity dictionaries
+        """
+        entity_objects = self.service.list_entities(
+            entity_type,
+            page=1,
+            limit=0,
+            last_sync=last_synced,
+            related=include_full,
+        )
+        return [self.service._entity_to_dict(obj, entity_type) for obj in entity_objects]
+
+    def _list_entities_of_all_types(
+        self, last_synced: str | None, include_full: bool
+    ) -> list[dict[str, Any]]:
+        """List every entity of every supported type.
+
+        This costs at least one API request per type, and more for types that
+        span several pages, so it eats into the API rate limit quickly.
+
+        Args:
+            last_synced: ISO timestamp to only get entities modified after it
+            include_full: Whether to fetch related data as well
+
+        Returns:
+            List of entity dictionaries across all types
+        """
+        entities: list[dict[str, Any]] = []
+        for et in ALL_ENTITY_TYPES:
+            try:
+                entities.extend(
+                    self._list_entities_of_type(et, last_synced, include_full)
+                )
+            except Exception as e:
+                logger.warning(f"Could not list {et}: {e}")
+                continue
+        return entities
 
     async def find_entities(
         self,
@@ -119,74 +179,29 @@ class KankaOperations:
             Dictionary with entities and sync_info
         """
         # Validate entity type if provided
-        valid_types = [
-            "character",
-            "creature",
-            "location",
-            "organization",
-            "race",
-            "note",
-            "journal",
-            "quest",
-        ]
-        if entity_type and entity_type not in valid_types:
+        if entity_type and entity_type not in ALL_ENTITY_TYPES:
             logger.error(
-                f"Invalid entity_type: {entity_type}. Must be one of: {', '.join(valid_types)}"
+                f"Invalid entity_type: {entity_type}. "
+                f"Must be one of: {', '.join(ALL_ENTITY_TYPES)}"
             )
             return {"entities": [], "sync_info": {}}
+
+        # Narrowed to EntityType by the check above
+        typed_entity_type: EntityType | None = entity_type or None
 
         try:
             # Step 1: Get entities
             if query:
                 # For content search, we need full entities
-                entities = []
-
-                if entity_type:
-                    # Search specific entity type
-                    # Cast to EntityType since we validated it above
-                    from typing import cast
-
-                    from .types import EntityType
-
-                    entity_objects = self.service.list_entities(
-                        cast(EntityType, entity_type),
-                        page=1,
-                        limit=0,
-                        last_sync=last_synced,
-                        related=include_full,
+                if typed_entity_type:
+                    entities = self._list_entities_of_type(
+                        typed_entity_type, last_synced, include_full
                     )
-                    for obj in entity_objects:
-                        entity_dict = self.service._entity_to_dict(obj, entity_type)
-                        entities.append(entity_dict)
                 else:
                     # Search across all entity types
-                    from .types import EntityType
-
-                    entity_types: list[EntityType] = [
-                        "character",
-                        "creature",
-                        "location",
-                        "organization",
-                        "race",
-                        "note",
-                        "journal",
-                        "quest",
-                    ]
-                    for et in entity_types:
-                        try:
-                            entity_objects = self.service.list_entities(
-                                et,
-                                page=1,
-                                limit=0,
-                                last_sync=last_synced,
-                                related=include_full,
-                            )
-                            for obj in entity_objects:
-                                entity_dict = self.service._entity_to_dict(obj, et)
-                                entities.append(entity_dict)
-                        except Exception as e:
-                            logger.debug(f"Could not search {et}: {e}")
-                            continue
+                    entities = self._list_entities_of_all_types(
+                        last_synced, include_full
+                    )
 
                 # Apply content search
                 entities = search_in_content(entities, query)
@@ -204,30 +219,16 @@ class KankaOperations:
                         )
                     entities = minimal_entities
             else:
-                # List entities of specific type (no search)
-                if not entity_type:
-                    # No entity type specified, can't list all
-                    return {"entities": [], "sync_info": {}}
-
-                # Get all entities of this type
-                # Cast to EntityType since we validated it above
-                from typing import cast
-
-                from .types import EntityType
-
-                entity_objects = self.service.list_entities(
-                    cast(EntityType, entity_type),
-                    page=1,
-                    limit=0,
-                    last_sync=last_synced,
-                    related=include_full,
-                )
-
-                # Convert to dictionaries
-                entities = []
-                for obj in entity_objects:
-                    entity_dict = self.service._entity_to_dict(obj, entity_type)
-                    entities.append(entity_dict)
+                # List entities without searching their content
+                if typed_entity_type:
+                    entities = self._list_entities_of_type(
+                        typed_entity_type, last_synced, include_full
+                    )
+                else:
+                    # No type given: list every type and concatenate
+                    entities = self._list_entities_of_all_types(
+                        last_synced, include_full
+                    )
 
             # Step 2: Apply client-side filters
             if name:
