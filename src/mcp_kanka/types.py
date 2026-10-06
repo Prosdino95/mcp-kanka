@@ -1,6 +1,6 @@
 """Type definitions for the Kanka MCP server."""
 
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 # Supported entity types
 EntityType = Literal[
@@ -49,6 +49,7 @@ class EntityInput(TypedDict):
     entry: str | None
     tags: list[str] | None
     is_hidden: bool | None
+    fields: dict[str, Any] | None
 
 
 class CreateEntitiesParams(TypedDict):
@@ -66,6 +67,7 @@ class EntityUpdate(TypedDict):
     entry: str | None
     tags: list[str] | None
     is_hidden: bool | None
+    fields: dict[str, Any] | None
 
 
 class UpdateEntitiesParams(TypedDict):

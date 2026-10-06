@@ -357,6 +357,7 @@ class KankaService:
         is_completed: bool | None = None,
         image_uuid: str | None = None,
         header_uuid: str | None = None,
+        fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Create a new entity.
@@ -371,6 +372,8 @@ class KankaService:
             is_completed: Whether quest is completed (quests only)
             image_uuid: Image gallery UUID for entity image
             header_uuid: Image gallery UUID for entity header
+            fields: Arbitrary API fields merged into the payload as-is,
+                overriding anything derived from the arguments above
 
         Returns:
             Created entity data
@@ -414,6 +417,10 @@ class KankaService:
             if header_uuid is not None:
                 data["header_uuid"] = header_uuid
 
+            # Merge arbitrary API fields last so they win
+            if fields:
+                data.update(fields)
+
             # Create entity
             entity = manager.create(**data)
 
@@ -443,6 +450,7 @@ class KankaService:
         is_completed: bool | None = None,
         image_uuid: str | None = None,
         header_uuid: str | None = None,
+        fields: dict[str, Any] | None = None,
     ) -> bool:
         """
         Update an existing entity.
@@ -457,6 +465,8 @@ class KankaService:
             is_completed: Whether quest is completed (quests only)
             image_uuid: Image gallery UUID for entity image
             header_uuid: Image gallery UUID for entity header
+            fields: Arbitrary API fields merged into the payload as-is,
+                overriding anything derived from the arguments above
 
         Returns:
             True if successful
@@ -500,8 +510,13 @@ class KankaService:
             if header_uuid is not None:
                 data["header_uuid"] = header_uuid
 
+            # Merge arbitrary API fields last so they win
+            if fields:
+                data.update(fields)
+
             # Update entity
             manager.update(entity_data["id"], **data)
+
             return True
 
         except Exception as e:
@@ -529,6 +544,7 @@ class KankaService:
 
             # Delete entity
             manager.delete(entity_data["id"])
+
             return True
 
         except Exception as e:

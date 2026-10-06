@@ -187,6 +187,29 @@ async def list_tools() -> list[types.Tool]:
                                     "type": "boolean",
                                     "description": "If true, hidden from players (admin-only)",
                                 },
+                                "fields": {
+                                    "type": "object",
+                                    "additionalProperties": True,
+                                    "description": (
+                                        "Any other Kanka API field, merged into the "
+                                        "request payload as-is. Names must match the "
+                                        "API exactly: 'parent_id' (parent location or "
+                                        "organisation), and for characters 'title', "
+                                        "'age', 'sex', 'pronouns', 'is_dead', plus the "
+                                        "arrays 'races', 'locations', 'families'. "
+                                        "WARNING - the two kinds of ID are NOT "
+                                        "interchangeable and the API accepts the wrong "
+                                        "one without complaining, silently linking the "
+                                        "wrong thing: 'parent_id' takes an entity_id, "
+                                        "while 'races'/'locations'/'families' take the "
+                                        "module-internal id, i.e. the 'id' of the "
+                                        "race/location/family, NOT its entity_id. Read "
+                                        "the target back and check before trusting a "
+                                        "link. Values are sent verbatim: no Markdown "
+                                        "conversion, no tag-name resolution. Takes "
+                                        "precedence over the parameters above."
+                                    ),
+                                },
                             },
                             "required": ["entity_type", "name"],
                         },
@@ -224,6 +247,29 @@ async def list_tools() -> list[types.Tool]:
                                 },
                                 "tags": {"type": "array", "items": {"type": "string"}},
                                 "is_hidden": {"type": "boolean"},
+                                "fields": {
+                                    "type": "object",
+                                    "additionalProperties": True,
+                                    "description": (
+                                        "Any other Kanka API field, merged into the "
+                                        "request payload as-is. Names must match the "
+                                        "API exactly: 'parent_id' (parent location or "
+                                        "organisation), and for characters 'title', "
+                                        "'age', 'sex', 'pronouns', 'is_dead', plus the "
+                                        "arrays 'races', 'locations', 'families'. "
+                                        "WARNING - the two kinds of ID are NOT "
+                                        "interchangeable and the API accepts the wrong "
+                                        "one without complaining, silently linking the "
+                                        "wrong thing: 'parent_id' takes an entity_id, "
+                                        "while 'races'/'locations'/'families' take the "
+                                        "module-internal id, i.e. the 'id' of the "
+                                        "race/location/family, NOT its entity_id. Read "
+                                        "the target back and check before trusting a "
+                                        "link. Values are sent verbatim: no Markdown "
+                                        "conversion, no tag-name resolution. Takes "
+                                        "precedence over the parameters above."
+                                    ),
+                                },
                             },
                             "required": ["entity_id", "name"],
                         },

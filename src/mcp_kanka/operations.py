@@ -366,6 +366,7 @@ class KankaOperations:
                     is_completed=entity_input.get("is_completed"),
                     image_uuid=entity_input.get("image_uuid"),
                     header_uuid=entity_input.get("header_uuid"),
+                    fields=entity_input.get("fields"),
                 )
 
                 result: CreateEntityResult = {
@@ -441,6 +442,7 @@ class KankaOperations:
                     is_completed=update.get("is_completed"),
                     image_uuid=update.get("image_uuid"),
                     header_uuid=update.get("header_uuid"),
+                    fields=update.get("fields"),
                 )
 
                 result: UpdateEntityResult = {
