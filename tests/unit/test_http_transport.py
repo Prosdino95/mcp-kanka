@@ -82,3 +82,45 @@ def test_allowed_hosts_rejects_other_hosts(monkeypatch):
 
     assert rejected.status_code >= 400
     assert accepted.status_code == 200
+
+
+def _tools_list(client, headers=None):
+    """POST a tools/list request to /mcp."""
+    return client.post(
+        "/mcp",
+        headers={**MCP_HEADERS, **(headers or {})},
+        json={"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}},
+    )
+
+
+def test_no_token_configured_keeps_mcp_open(monkeypatch):
+    """Test that without MCP_AUTH_TOKEN nothing changes."""
+    monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
+
+    with TestClient(build_http_app()) as client:
+        assert _tools_list(client).status_code == 200
+
+
+def test_token_required_when_configured(monkeypatch):
+    """Test that a configured token turns away requests without it."""
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "s3cret")
+
+    with TestClient(build_http_app()) as client:
+        missing = _tools_list(client)
+        wrong = _tools_list(client, {"Authorization": "Bearer nope"})
+        not_bearer = _tools_list(client, {"Authorization": "s3cret"})
+        right = _tools_list(client, {"Authorization": "Bearer s3cret"})
+
+    assert missing.status_code == 401
+    assert missing.headers["WWW-Authenticate"] == "Bearer"
+    assert wrong.status_code == 401
+    assert not_bearer.status_code == 401
+    assert right.status_code == 200
+
+
+def test_healthz_stays_open_with_a_token(monkeypatch):
+    """Test that the container healthcheck keeps working behind the token."""
+    monkeypatch.setenv("MCP_AUTH_TOKEN", "s3cret")
+
+    with TestClient(build_http_app()) as client:
+        assert client.get("/healthz").status_code == 200

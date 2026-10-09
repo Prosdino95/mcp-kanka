@@ -7,6 +7,7 @@ An MCP server that provides tools for interacting with Kanka campaigns.
 
 import asyncio
 import contextlib
+import hmac
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -22,7 +23,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 
@@ -774,12 +775,37 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
 
 
 class _MCPEndpoint:
-    """ASGI endpoint handing every request on the MCP path to the session manager."""
+    """ASGI endpoint handing every request on the MCP path to the session manager.
 
-    def __init__(self, session_manager: StreamableHTTPSessionManager):
+    With an auth token set, a request must carry "Authorization: Bearer
+    <token>" or it is refused before reaching the MCP server.
+    """
+
+    def __init__(
+        self, session_manager: StreamableHTTPSessionManager, auth_token: str | None
+    ):
         self.session_manager = session_manager
+        self.expected_header = f"Bearer {auth_token}" if auth_token else None
+
+    def _is_authorized(self, scope: Scope) -> bool:
+        if self.expected_header is None:
+            return True
+        headers = dict(scope.get("headers") or [])
+        received = headers.get(b"authorization", b"").decode("latin-1")
+        # Constant-time comparison, so response timing leaks nothing about the token
+        return hmac.compare_digest(received, self.expected_header)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if not self._is_authorized(scope):
+            client = scope.get("client") or ("?", 0)
+            logger.warning(f"Rejected MCP request without a valid token from {client[0]}")
+            response = JSONResponse(
+                {"error": "unauthorized"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            await response(scope, receive, send)
+            return
         await self.session_manager.handle_request(scope, receive, send)
 
 
@@ -795,6 +821,9 @@ def build_http_app() -> Starlette:
     survive between requests: a restart or a proxy in front loses nothing.
     DNS rebinding protection stays off unless MCP_ALLOWED_HOSTS lists the
     Host headers to accept, comma separated.
+
+    When MCP_AUTH_TOKEN is set, /mcp only accepts requests carrying it as a
+    bearer token; /healthz stays open for the container healthcheck.
 
     Returns:
         The Starlette application
@@ -820,7 +849,12 @@ def build_http_app() -> Starlette:
 
     return Starlette(
         routes=[
-            Route("/mcp", endpoint=_MCPEndpoint(session_manager)),
+            Route(
+                "/mcp",
+                endpoint=_MCPEndpoint(
+                    session_manager, os.getenv("MCP_AUTH_TOKEN") or None
+                ),
+            ),
             Route("/healthz", endpoint=_healthz),
         ],
         lifespan=lifespan,
