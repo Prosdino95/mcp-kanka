@@ -6,15 +6,25 @@ An MCP server that provides tools for interacting with Kanka campaigns.
 """
 
 import asyncio
+import contextlib
 import logging
 import os
+from collections.abc import AsyncIterator
 from typing import Any
 
 import mcp.server.stdio
 import mcp.types as types
+import uvicorn
 from dotenv import load_dotenv
 from mcp.server import Server
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyUrl
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
+from starlette.types import Receive, Scope, Send
 
 from .resources import get_kanka_context
 from .tools import (
@@ -763,8 +773,67 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
         return [types.TextContent(type="text", text=f"Error: {str(e)}")]
 
 
+class _MCPEndpoint:
+    """ASGI endpoint handing every request on the MCP path to the session manager."""
+
+    def __init__(self, session_manager: StreamableHTTPSessionManager):
+        self.session_manager = session_manager
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await self.session_manager.handle_request(scope, receive, send)
+
+
+async def _healthz(_request: Request) -> PlainTextResponse:
+    """Liveness probe for container orchestration."""
+    return PlainTextResponse("ok")
+
+
+def build_http_app() -> Starlette:
+    """Build the ASGI app serving the MCP server over Streamable HTTP.
+
+    The server answers on /mcp. It runs stateless, so no session has to
+    survive between requests: a restart or a proxy in front loses nothing.
+    DNS rebinding protection stays off unless MCP_ALLOWED_HOSTS lists the
+    Host headers to accept, comma separated.
+
+    Returns:
+        The Starlette application
+    """
+    allowed_hosts = [
+        host.strip()
+        for host in os.getenv("MCP_ALLOWED_HOSTS", "").split(",")
+        if host.strip()
+    ]
+    security = (
+        TransportSecuritySettings(allowed_hosts=allowed_hosts)
+        if allowed_hosts
+        else None
+    )
+    session_manager = StreamableHTTPSessionManager(
+        app=app, stateless=True, security_settings=security
+    )
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: Starlette) -> AsyncIterator[None]:
+        async with session_manager.run():
+            yield
+
+    return Starlette(
+        routes=[
+            Route("/mcp", endpoint=_MCPEndpoint(session_manager)),
+            Route("/healthz", endpoint=_healthz),
+        ],
+        lifespan=lifespan,
+    )
+
+
 async def main() -> None:
-    """Main entry point for the MCP server."""
+    """Main entry point for the MCP server.
+
+    MCP_TRANSPORT selects the transport: "stdio" (the default, what Claude
+    Desktop launches) or "streamable-http", which listens on MCP_HOST and
+    MCP_PORT (127.0.0.1:8000 unless set).
+    """
     # Validate required environment variables
     if not os.getenv("KANKA_TOKEN"):
         logger.error("KANKA_TOKEN environment variable is required")
@@ -774,14 +843,27 @@ async def main() -> None:
         logger.error("KANKA_CAMPAIGN_ID environment variable is required")
         raise ValueError("KANKA_CAMPAIGN_ID environment variable is required")
 
-    logger.info("Starting Kanka MCP server...")
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    logger.info(f"Starting Kanka MCP server ({transport})...")
 
-    # Run the server
-    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        await app.run(
-            read_stream,
-            write_stream,
-            app.create_initialization_options(),
+    if transport == "stdio":
+        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+            await app.run(
+                read_stream,
+                write_stream,
+                app.create_initialization_options(),
+            )
+    elif transport == "streamable-http":
+        config = uvicorn.Config(
+            build_http_app(),
+            host=os.getenv("MCP_HOST", "127.0.0.1"),
+            port=int(os.getenv("MCP_PORT", "8000")),
+            log_level=os.getenv("MCP_LOG_LEVEL", "INFO").lower(),
+        )
+        await uvicorn.Server(config).serve()
+    else:
+        raise ValueError(
+            f"Unknown MCP_TRANSPORT '{transport}': use 'stdio' or 'streamable-http'"
         )
 
 
