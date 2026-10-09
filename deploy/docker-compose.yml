@@ -1,0 +1,87 @@
+# =============================================================
+#  Kanka MCP server — stack autonomo
+#  VM Oracle Ampere A1 (arm64)
+# =============================================================
+#  Il server MCP parla con Kanka sulla rete Docker di Kanka e viene
+#  raggiunto solo da cloudflared, su una rete separata. Nessuna porta
+#  pubblicata sull'host: l'unico ingresso è il tunnel, e dal tunnel
+#  si arriva al server MCP ma non a Kanka.
+#
+#  kanka_frontend ── mcp-kanka ── edge ── cloudflared ══ Cloudflare
+#      (Kanka)                       (solo questi due)
+#
+#  Il compose di Kanka non viene toccato: qui la sua rete è solo
+#  dichiarata external.
+# -------------------------------------------------------------
+#  SETUP
+#
+#  1. cp .env.example .env && chmod 600 .env, poi compilalo.
+#  2. docker compose build      # tira i due fork da GitHub
+#  3. docker compose up -d
+#     docker compose logs -f
+#
+#  Aggiornare il codice: metti i nuovi SHA in args qui sotto e
+#  ripeti build + up. Con un nome di ramo Docker riuserebbe la cache.
+# =============================================================
+
+name: mcp-kanka
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  mcp-kanka:
+    build:
+      context: .
+      platforms:
+        - linux/arm64
+      args:
+        PYTHON_KANKA_REF: 8ae47321805766e51e08ac6a87dc196c898be458
+        MCP_KANKA_REF: 050362bb3cd9d5c501946d8cc9043bf9719f6a61
+    image: mcp-kanka:local
+    restart: unless-stopped
+    # Niente env_file: con env_file anche TUNNEL_TOKEN finirebbe nel
+    # container. Ogni servizio riceve solo le variabili che usa.
+    environment:
+      - KANKA_TOKEN=${KANKA_TOKEN}
+      - KANKA_CAMPAIGN_ID=${KANKA_CAMPAIGN_ID}
+      # Kanka CE instrada le API in base all'header Host (APP_DOMAIN):
+      # "Host: kanka" risponde 404 a tutto. Si parla con il container
+      # per nome e si manda il dominio che l'istanza si aspetta.
+      - KANKA_BASE_URL=http://kanka/1.0
+      - KANKA_HOST_HEADER=${KANKA_HOST_HEADER}
+      # Se valorizzato, /mcp accetta solo "Authorization: Bearer <token>":
+      # e il valore che il portal manda come Custom header. Vuoto = nessun
+      # controllo, cosi il deploy non rompe nulla prima che il portal lo mandi.
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+    networks:
+      kanka:
+      edge:
+        # La rotta del tunnel per l'hostname privato viene risolta da
+        # cloudflared: con questo alias il DNS di Docker la porta qui.
+        aliases:
+          - ${MCP_PRIVATE_HOSTNAME}
+    logging: *default-logging
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      mcp-kanka:
+        condition: service_healthy
+    # Solo edge: cloudflared non vede la rete di Kanka.
+    networks: [edge]
+    logging: *default-logging
+
+networks:
+  kanka:
+    name: kanka_frontend
+    external: true
+  edge:
